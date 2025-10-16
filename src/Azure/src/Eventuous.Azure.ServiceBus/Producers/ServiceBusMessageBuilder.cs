@@ -64,7 +64,9 @@ class ServiceBusMessageBuilder {
         => (message.Metadata ?? [])
             .Concat(message.AdditionalHeaders ?? [])
             .Concat([new(_attributes.MessageType, messageType), new(_attributes.StreamName, _streamName)])
-            .Where(pair => !reservedAttributes.Contains(pair.Key))
+            .Where(pair =>
+                !reservedAttributes.Contains(pair.Key) &&
+                !pair.Key.Equals("OriginalMessage"))
             .Where(pair => pair.Value is not null)
             .Select(pair => new KeyValuePair<string, object>(pair.Key, pair.Value!));
 }
