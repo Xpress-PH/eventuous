@@ -23,6 +23,11 @@ public class ServiceBusProduceOptions {
     public string? ReplyTo { get; set; }
 
     /// <summary>
+    /// Session identifier to guarantee ordering on session-enabled entities.
+    /// </summary>
+    public string? SessionId { get; init; }
+
+    /// <summary>
     /// Gets or sets the time interval after which the message expires.
     /// </summary>
     public TimeSpan TimeToLive { get; set; } = TimeSpan.MaxValue;

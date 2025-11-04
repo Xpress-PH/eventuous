@@ -51,6 +51,15 @@ class ServiceBusMessageBuilder {
             ReplyTo       = metadata?.GetValueOrDefault(_attributes.ReplyTo, _options?.ReplyTo)?.ToString()
         };
 
+        var metaSession = metadata?.GetValueOrDefault(_attributes.SessionId, null)?.ToString();
+        var metaReplySession = metadata?.GetValueOrDefault(_attributes.ReplyToSessionId, null)?.ToString();
+        if (!string.IsNullOrWhiteSpace(_options?.SessionId))
+            serviceBusMessage.SessionId = _options!.SessionId;
+        else if (!string.IsNullOrWhiteSpace(metaSession))
+            serviceBusMessage.SessionId = metaSession;
+        if (!string.IsNullOrWhiteSpace(metaReplySession))
+            serviceBusMessage.ReplyToSessionId = metaReplySession;
+
         var reservedAttributes = _attributes.ReservedNames();
 
         foreach (var property in GetCustomApplicationProperties(message, messageType, reservedAttributes)) {

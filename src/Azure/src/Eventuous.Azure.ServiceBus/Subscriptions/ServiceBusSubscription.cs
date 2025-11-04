@@ -15,6 +15,7 @@ public class ServiceBusSubscription : EventSubscription<ServiceBusSubscriptionOp
     readonly ServiceBusClient                  _client;
     readonly Func<ProcessErrorEventArgs, Task> _defaultErrorHandler;
     ServiceBusProcessor?                       _processor;
+    ServiceBusSessionProcessor?                _sessionProcessor;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ServiceBusSubscription"/> class.
@@ -37,7 +38,20 @@ public class ServiceBusSubscription : EventSubscription<ServiceBusSubscriptionOp
     /// <returns></returns>
     /// <exception cref="InvalidOperationException"></exception>
     protected override ValueTask Subscribe(CancellationToken cancellationToken) {
-        _processor = Options.QueueOrTopic.MakeProcessor(_client, Options);
+        var processorHandle = Options.QueueOrTopic.MakeProcessor(_client, Options);
+
+        if (processorHandle.SessionProcessor is { } sessionProcessor)
+        {
+            _sessionProcessor = sessionProcessor;
+
+            sessionProcessor.ProcessMessageAsync += HandleSessionMessage;
+            sessionProcessor.ProcessErrorAsync   += _defaultErrorHandler;
+
+            return new(sessionProcessor.StartProcessingAsync(cancellationToken));
+        }
+
+        _processor = processorHandle.Processor
+            ?? throw new InvalidOperationException("Queue or topic factory must provide a processor instance.");
 
         _processor.ProcessMessageAsync += HandleMessage;
         _processor.ProcessErrorAsync   += _defaultErrorHandler;
@@ -91,6 +105,52 @@ public class ServiceBusSubscription : EventSubscription<ServiceBusSubscriptionOp
                 Log.ErrorLog?.Log(ex, "Error processing message: {MessageId}", msg.MessageId);
             }
         }
+
+        async Task HandleSessionMessage(ProcessSessionMessageEventArgs arg) {
+            var ct = arg.CancellationToken;
+
+            if (ct.IsCancellationRequested) return;
+
+            var msg = arg.Message;
+
+            var eventType = msg.ApplicationProperties[Options.AttributeNames.MessageType].ToString()
+             ?? throw new InvalidOperationException("Event type is missing in message properties");
+            var contentType = msg.ContentType;
+
+            var streamName = msg.ApplicationProperties[Options.AttributeNames.StreamName].ToString()
+             ?? throw new InvalidOperationException("Stream name is missing in message properties");
+
+            Logger.Current = Log;
+
+            var evt = DeserializeData(contentType, eventType, msg.Body, streamName);
+
+            var applicationProperties = msg.ApplicationProperties.Concat(MessageProperties(msg));
+
+            var ctx = new MessageConsumeContext(
+                msg.MessageId,
+                eventType,
+                contentType,
+                streamName,
+                0,
+                0,
+                0,
+                Sequence++,
+                msg.EnqueuedTime.UtcDateTime,
+                evt,
+                AsMeta(applicationProperties),
+                SubscriptionId,
+                ct
+            );
+
+            try {
+                await Handler(ctx).NoContext();
+                await arg.CompleteMessageAsync(msg, ct).NoContext();
+            } catch (Exception ex) {
+                await arg.AbandonMessageAsync(msg, null, ct).NoContext();
+                await _defaultErrorHandler(new(ex, ServiceBusErrorSource.Abandon, arg.FullyQualifiedNamespace, arg.EntityPath, arg.Identifier, arg.CancellationToken)).NoContext();
+                Log.ErrorLog?.Log(ex, "Error processing message: {MessageId}", msg.MessageId);
+            }
+        }
     }
 
     IEnumerable<KeyValuePair<string, object>> MessageProperties(ServiceBusReceivedMessage msg) {
@@ -110,6 +170,12 @@ public class ServiceBusSubscription : EventSubscription<ServiceBusSubscriptionOp
 
         if (msg.MessageId is not null)
             yield return new(attributes.MessageId, msg.MessageId);
+
+        if (msg.SessionId is not null)
+            yield return new(attributes.SessionId, msg.SessionId);
+
+        if (msg.ReplyToSessionId is not null)
+            yield return new(attributes.ReplyToSessionId, msg.ReplyToSessionId);
     }
 
     static Metadata AsMeta(IEnumerable<KeyValuePair<string, object>> applicationProperties) =>
@@ -129,6 +195,12 @@ public class ServiceBusSubscription : EventSubscription<ServiceBusSubscriptionOp
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
     protected override async ValueTask Unsubscribe(CancellationToken cancellationToken) {
+        if (_sessionProcessor is { } sessionProcessor)
+        {
+            await sessionProcessor.StopProcessingAsync(cancellationToken).NoContext();
+            return;
+        }
+
         if (_processor == null) return;
         await _processor.StopProcessingAsync(cancellationToken).NoContext();
     }
