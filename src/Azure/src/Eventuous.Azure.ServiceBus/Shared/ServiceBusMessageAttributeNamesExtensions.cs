@@ -12,6 +12,8 @@ static class ServiceBusMessageAttributeNamesExtensions {
         attributeNames.ReplyTo,
         attributeNames.Subject,
         attributeNames.To,
-        attributeNames.MessageId
+        attributeNames.MessageId,
+        attributeNames.SessionId,
+        attributeNames.ReplyToSessionId
     ];
 }

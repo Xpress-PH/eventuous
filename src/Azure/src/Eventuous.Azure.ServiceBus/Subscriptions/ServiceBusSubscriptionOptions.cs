@@ -21,6 +21,17 @@ public record ServiceBusSubscriptionOptions : SubscriptionOptions {
     public ServiceBusProcessorOptions ProcessorOptions { get; set; } = new();
 
     /// <summary>
+    /// Session processor options (если работаем с RequiresSession).
+    /// If not specified, it will be built from <see cref="ProcessorOptions"/>.
+    /// </summary>
+    public ServiceBusSessionProcessorOptions? SessionProcessorOptions { get; set; }
+
+    /// <summary>
+    /// An indication that an entity in Service Bus is created with RequiresSession = true and a session processor needs to be built.
+    /// </summary>
+    public bool RequiresSession { get; set; } = false;
+
+    /// <summary>
     /// Gets the message attributes for Service Bus messages.
     /// </summary>
     public ServiceBusMessageAttributeNames AttributeNames { get; init; } = new();
@@ -34,6 +45,17 @@ public record ServiceBusSubscriptionOptions : SubscriptionOptions {
 /// <summary>
 /// Represents a queue or topic for Service Bus subscriptions.
 /// </summary>
+public readonly record struct ServiceBusProcessorFactoryResult(
+    ServiceBusProcessor? Processor,
+    ServiceBusSessionProcessor? SessionProcessor)
+{
+    public static implicit operator ServiceBusProcessorFactoryResult(ServiceBusProcessor processor)
+        => new(processor, null);
+
+    public static implicit operator ServiceBusProcessorFactoryResult(ServiceBusSessionProcessor sessionProcessor)
+        => new(null, sessionProcessor);
+}
+
 public interface IQueueOrTopic {
     /// <summary>
     /// Creates a <see cref="ServiceBusProcessor"/> for the specified client and options.
@@ -41,7 +63,7 @@ public interface IQueueOrTopic {
     /// <param name="client">The Service Bus client.</param>
     /// <param name="options">The subscription options.</param>
     /// <returns>A configured <see cref="ServiceBusProcessor"/> instance.</returns>
-    ServiceBusProcessor MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options);
+    ServiceBusProcessorFactoryResult MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options);
 }
 
 /// <summary>
@@ -54,8 +76,25 @@ public record Queue(string Name) : IQueueOrTopic {
     /// <param name="client">The Service Bus client.</param>
     /// <param name="options">The subscription options.</param>
     /// <returns>A configured <see cref="ServiceBusProcessor"/> for the queue.</returns>
-    public ServiceBusProcessor MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options) 
-        => client.CreateProcessor(Name, options.ProcessorOptions);
+    public ServiceBusProcessorFactoryResult MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options) {
+        if (options.RequiresSession) {
+            var sessionOptions = BuildSessionOptions(options);
+            return client.CreateSessionProcessor(Name, sessionOptions);
+        }
+
+        return client.CreateProcessor(Name, options.ProcessorOptions);
+    }
+
+    static ServiceBusSessionProcessorOptions BuildSessionOptions(ServiceBusSubscriptionOptions options) {
+        // We construct from standard options to avoid duplicating the configuration
+        var sessionOptions = options.SessionProcessorOptions ?? new ServiceBusSessionProcessorOptions();
+        sessionOptions.AutoCompleteMessages = options.ProcessorOptions.AutoCompleteMessages;
+        sessionOptions.PrefetchCount = options.ProcessorOptions.PrefetchCount;
+        sessionOptions.MaxAutoLockRenewalDuration = options.ProcessorOptions.MaxAutoLockRenewalDuration;
+        sessionOptions.ReceiveMode = options.ProcessorOptions.ReceiveMode;
+        sessionOptions.Identifier = options.ProcessorOptions.Identifier;
+        return sessionOptions;
+    }
 }
 
 /// <summary>
@@ -68,8 +107,24 @@ public record Topic(string Name) : IQueueOrTopic {
     /// <param name="client">The Service Bus client.</param>
     /// <param name="options">The subscription options.</param>
     /// <returns>A configured <see cref="ServiceBusProcessor"/> for the topic.</returns>
-    public ServiceBusProcessor MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options) 
-        => client.CreateProcessor(Name, options.SubscriptionId, options.ProcessorOptions);
+    public ServiceBusProcessorFactoryResult MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options) {
+        if (options.RequiresSession) {
+            var sessionOptions = BuildSessionOptions(options);
+            return client.CreateSessionProcessor(Name, options.SubscriptionId, sessionOptions);
+        }
+
+        return client.CreateProcessor(Name, options.SubscriptionId, options.ProcessorOptions);
+    }
+
+    static ServiceBusSessionProcessorOptions BuildSessionOptions(ServiceBusSubscriptionOptions options) {
+        var sessionOptions = options.SessionProcessorOptions ?? new ServiceBusSessionProcessorOptions();
+        sessionOptions.AutoCompleteMessages = options.ProcessorOptions.AutoCompleteMessages;
+        sessionOptions.PrefetchCount = options.ProcessorOptions.PrefetchCount;
+        sessionOptions.MaxAutoLockRenewalDuration = options.ProcessorOptions.MaxAutoLockRenewalDuration;
+        sessionOptions.ReceiveMode = options.ProcessorOptions.ReceiveMode;
+        sessionOptions.Identifier = options.ProcessorOptions.Identifier;
+        return sessionOptions;
+    }
 }
 
 /// <summary>
@@ -82,6 +137,22 @@ public record TopicAndSubscription(string Name, string Subscription) : IQueueOrT
     /// <param name="client">The Service Bus client.</param>
     /// <param name="options">The subscription options.</param>
     /// <returns>A configured <see cref="ServiceBusProcessor"/> for the topic and subscription.</returns>
-    public ServiceBusProcessor MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options)
-        => client.CreateProcessor(Name, Subscription, options.ProcessorOptions);
+    public ServiceBusProcessorFactoryResult MakeProcessor(ServiceBusClient client, ServiceBusSubscriptionOptions options) {
+        if (options.RequiresSession) {
+            var sessionOptions = BuildSessionOptions(options);
+            return client.CreateSessionProcessor(Name, Subscription, sessionOptions);
+        }
+
+        return client.CreateProcessor(Name, Subscription, options.ProcessorOptions);
+    }
+
+    static ServiceBusSessionProcessorOptions BuildSessionOptions(ServiceBusSubscriptionOptions options) {
+        var sessionOptions = options.SessionProcessorOptions ?? new ServiceBusSessionProcessorOptions();
+        sessionOptions.AutoCompleteMessages = options.ProcessorOptions.AutoCompleteMessages;
+        sessionOptions.PrefetchCount = options.ProcessorOptions.PrefetchCount;
+        sessionOptions.MaxAutoLockRenewalDuration = options.ProcessorOptions.MaxAutoLockRenewalDuration;
+        sessionOptions.ReceiveMode = options.ProcessorOptions.ReceiveMode;
+        sessionOptions.Identifier = options.ProcessorOptions.Identifier;
+        return sessionOptions;
+    }
 }

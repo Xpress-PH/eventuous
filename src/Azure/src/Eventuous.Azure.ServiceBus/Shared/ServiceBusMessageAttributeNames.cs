@@ -46,4 +46,12 @@ public class ServiceBusMessageAttributeNames {
     /// The message ID attribute name.
     /// </summary>
     public string MessageId { get; set; } = MetaTags.MessageId;
+    /// <summary>
+    /// The session id attribute name.
+    /// </summary>
+    public string SessionId { get; set; } = nameof(SessionId);
+    /// <summary>
+    /// The reply-to session id attribute name for request-reply over sessions.
+    /// </summary>
+    public string ReplyToSessionId { get; set; } = nameof(ReplyToSessionId);
 }
