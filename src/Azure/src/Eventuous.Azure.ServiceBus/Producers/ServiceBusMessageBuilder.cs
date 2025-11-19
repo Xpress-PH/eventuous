@@ -38,10 +38,10 @@ class ServiceBusMessageBuilder(
             ReplyTo = metadata?.GetValueOrDefault(attributes.ReplyTo, options?.ReplyTo)?.ToString()
         };
 
-        var metaSession = metadata?.GetValueOrDefault(_attributes.SessionId, null)?.ToString();
-        var metaReplySession = metadata?.GetValueOrDefault(_attributes.ReplyToSessionId, null)?.ToString();
-        if (!string.IsNullOrWhiteSpace(_options?.SessionId))
-            serviceBusMessage.SessionId = _options!.SessionId;
+        var metaSession = metadata?.GetValueOrDefault(attributes.SessionId, null)?.ToString();
+        var metaReplySession = metadata?.GetValueOrDefault(attributes.ReplyToSessionId, null)?.ToString();
+        if (!string.IsNullOrWhiteSpace(options?.SessionId))
+            serviceBusMessage.SessionId = options!.SessionId;
         else if (!string.IsNullOrWhiteSpace(metaSession))
             serviceBusMessage.SessionId = metaSession;
         if (!string.IsNullOrWhiteSpace(metaReplySession))
